@@ -1,0 +1,48 @@
+server:
+  port: 8080
+
+spring:
+  application:
+    name: llm-gateway
+
+  # Reactive R2DBC Configuration
+  r2dbc:
+    url: r2dbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/${DB_NAME:llmgateway}
+    username: ${DB_USER:postgres}
+    password: ${DB_PASSWORD:postgrespassword}
+    pool:
+      initial-size: 5
+      max-size: 20
+      max-idle-time: 30m
+
+  # Flyway Migrations (runs synchronously on startup via JDBC)
+  flyway:
+    enabled: true
+    url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/${DB_NAME:llmgateway}
+    user: ${DB_USER:postgres}
+    password: ${DB_PASSWORD:postgrespassword}
+    locations: classpath:db/migration
+    baseline-on-migrate: true
+
+  # Reactive Redis Configuration
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      timeout: 2000ms
+
+# Gateway Master Configuration
+gateway:
+  admin:
+    master-key: ${GATEWAY_MASTER_KEY:gw-master-secret-key-change-in-prod}
+
+# Actuator & Observability
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus
+  endpoint:
+    health:
+      show-details: always
+

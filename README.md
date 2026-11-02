@@ -48,3 +48,52 @@ mvn spring-boot:run
 ```
 
 Health endpoint: `http://localhost:8080/actuator/health`
+
+---
+
+## Testing the Gateway (Phase 1)
+
+### cURL (Non-Streaming)
+```bash
+curl -X POST http://localhost:8080/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer sk-gw-test" \
+  -d '{
+    "model": "gpt-4o-mini",
+    "messages": [{"role": "user", "content": "Hello!"}],
+    "stream": false
+  }'
+```
+
+### cURL (Streaming SSE)
+```bash
+curl -N -X POST http://localhost:8080/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer sk-gw-test" \
+  -d '{
+    "model": "gpt-4o-mini",
+    "messages": [{"role": "user", "content": "Tell me a joke."}],
+    "stream": true
+  }'
+```
+
+### Python SDK (`openai>=1.0`)
+```python
+from openai import OpenAI
+
+client = OpenAI(base_url="http://localhost:8080/v1", api_key="sk-gw-test")
+
+# Streaming
+stream = client.chat.completions.create(
+    model="gpt-4o-mini",
+    messages=[{"role": "user", "content": "Hello!"}],
+    stream=True
+)
+for chunk in stream:
+    if chunk.choices and chunk.choices[0].delta.content:
+        print(chunk.choices[0].delta.content, end="", flush=True)
+```
+Or run the included test script:
+```bash
+python3 verify_gateway.py
+```

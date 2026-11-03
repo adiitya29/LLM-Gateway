@@ -94,6 +94,20 @@ public class ApiKeyRepository {
                 .one();
     }
 
+    public Mono<Long> addSpent(UUID id, long additionalSpentMicroUsd) {
+        String sql = """
+                UPDATE api_keys
+                SET spent_micro_usd = spent_micro_usd + :additionalSpent, updated_at = NOW()
+                WHERE id = :id
+                RETURNING spent_micro_usd
+                """;
+        return databaseClient.sql(sql)
+                .bind("id", id)
+                .bind("additionalSpent", additionalSpentMicroUsd)
+                .map(row -> row.get("spent_micro_usd", Long.class))
+                .one();
+    }
+
     public Mono<Boolean> revokeById(UUID id) {
         String sql = "UPDATE api_keys SET is_active = false, updated_at = NOW() WHERE id = :id";
         return databaseClient.sql(sql)

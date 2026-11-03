@@ -124,6 +124,31 @@ curl -N -X POST http://localhost:8080/v1/chat/completions \
   }'
 ```
 
+### 3. Usage & Budget Consumption Query (Phase 4)
+```bash
+curl http://localhost:8080/v1/usage \
+  -H "Authorization: Bearer <your-api-key>"
+```
+Response:
+```json
+{
+  "api_key_id": "...",
+  "key_prefix": "sk-gw-abcd...",
+  "budget_micro_usd": 10000000,
+  "spent_micro_usd": 1250,
+  "remaining_micro_usd": 9998750,
+  "budget_usd": 10.0,
+  "spent_usd": 0.00125,
+  "remaining_usd": 9.99875,
+  "total_requests": 5,
+  "total_prompt_tokens": 120,
+  "total_completion_tokens": 180,
+  "total_tokens": 300
+}
+```
+
+---
+
 ### Python SDK (`openai>=1.0`)
 ```python
 from openai import OpenAI

@@ -74,9 +74,26 @@ def main():
             stream=False
         )
         print("Response received:", response.choices[0].message.content)
+        if response.usage:
+            print(f">> Usage: prompt={response.usage.prompt_tokens}, comp={response.usage.completion_tokens}, total={response.usage.total_tokens}")
         print(">> Authorized Model Request: SUCCESS")
     except Exception as e:
         print(">> Authorized Request failed:", e)
+
+    # 4. Test Usage & Balance Query
+    print("\n--- 4. Querying Consumption & Balance (/v1/usage) ---")
+    try:
+        usage_req = urllib.request.Request(
+            "http://localhost:8080/v1/usage",
+            headers={"Authorization": f"Bearer {raw_key}"}
+        )
+        with urllib.request.urlopen(usage_req) as resp:
+            usage_data = json.loads(resp.read().decode("utf-8"))
+            print(f"Usage Summary: {json.dumps(usage_data, indent=2)}")
+            print(f">> Budget: ${usage_data['budget_usd']}, Spent: ${usage_data['spent_usd']}, Remaining: ${usage_data['remaining_usd']}")
+            print(">> Usage Accounting: SUCCESS")
+    except Exception as e:
+        print(">> Usage Query failed:", e)
 
 if __name__ == "__main__":
     main()

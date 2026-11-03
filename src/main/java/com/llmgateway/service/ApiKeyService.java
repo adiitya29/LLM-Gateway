@@ -141,6 +141,8 @@ public class ApiKeyService {
         return apiKeyRepository.findById(id)
                 .flatMap(key -> apiKeyRepository.revokeById(id)
                         .then(redisTemplate.delete(REDIS_KEY_PREFIX + key.getKeyHash()))
+                        .then(redisTemplate.delete("budget:" + id))
+                        .then(redisTemplate.delete("ratelimit:" + id))
                         .doOnSuccess(v -> log.info("Revoked API Key id [{}] and purged Redis cache", id))
                 )
                 .then();

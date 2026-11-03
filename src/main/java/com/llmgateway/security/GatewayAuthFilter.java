@@ -59,8 +59,8 @@ public class GatewayAuthFilter implements WebFilter, Ordered {
             return chain.filter(exchange);
         }
 
-        // 3. Gateway proxy endpoints (/v1/chat/completions, /v1/models) require a valid API key
-        if (path.startsWith("/v1/chat/completions") || path.startsWith("/v1/models")) {
+        // 3. Gateway proxy endpoints (/v1/chat/completions, /v1/models, /v1/usage) require a valid API key
+        if (path.startsWith("/v1/chat/completions") || path.startsWith("/v1/models") || path.startsWith("/v1/usage")) {
             String authHeader = exchange.getRequest().getHeaders().getFirst(HttpHeaders.AUTHORIZATION);
 
             if (authHeader == null || !authHeader.startsWith("Bearer ")) {

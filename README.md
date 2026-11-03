@@ -149,6 +149,14 @@ Response:
 
 ---
 
+### 4. Resilience & Fallback Chains (Phase 5)
+- **Programmatic Circuit Breakers**: Powered by Resilience4j with reactive `CircuitBreakerOperator`. Configured per provider with automatic transitions between `CLOSED`, `OPEN`, and `HALF_OPEN`.
+- **Pre-Stream Fallback Chains**: If the primary provider encounters an HTTP 5xx, 429, timeout, or circuit breaker open, the gateway transparently fails over to the next configured target before the first token is sent to the client.
+- **Provider Locking**: Once the first token/byte is emitted to the client stream, the provider is locked to prevent stream corruption.
+- **Usage Enrichment**: Each request log in `usage_logs` tracks `fallback_used` (boolean) and `provider_used` (actual provider that handled the request).
+
+---
+
 ### Python SDK (`openai>=1.0`)
 ```python
 from openai import OpenAI

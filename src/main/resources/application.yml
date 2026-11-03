@@ -41,6 +41,14 @@ gateway:
     connect-timeout-ms: 5000
     read-timeout-ms: 60000
 
+  # Resilience & Circuit Breakers
+  circuit-breaker:
+    failure-rate-threshold: 50.0
+    sliding-window-size: 10
+    minimum-number-of-calls: 5
+    wait-duration-in-open-state-seconds: 10
+    permitted-number-of-calls-in-half-open-state: 3
+
   # Upstream Providers
   providers:
     gemini:

@@ -19,8 +19,18 @@ public class GatewayProperties {
 
     private Admin admin = new Admin();
     private Upstream upstream = new Upstream();
+    private CircuitBreakerProperties circuitBreaker = new CircuitBreakerProperties();
     private Map<String, ProviderConfig> providers = new HashMap<>();
     private Map<String, ModelRoute> routes = new HashMap<>();
+
+    @Data
+    public static class CircuitBreakerProperties {
+        private float failureRateThreshold = 50.0f;
+        private int slidingWindowSize = 10;
+        private int minimumNumberOfCalls = 5;
+        private int waitDurationInOpenStateSeconds = 10;
+        private int permittedNumberOfCallsInHalfOpenState = 3;
+    }
 
     @Data
     public static class Admin {
@@ -47,6 +57,8 @@ public class GatewayProperties {
         private int connectTimeoutMs = 5000;
         @Builder.Default
         private int readTimeoutMs = 60000;
+        @Builder.Default
+        private int ttftTimeoutMs = 15000;
         @Builder.Default
         private Map<String, String> headers = new HashMap<>();
     }

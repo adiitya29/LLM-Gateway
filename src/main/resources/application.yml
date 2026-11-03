@@ -7,7 +7,7 @@ spring:
 
   # Reactive R2DBC Configuration
   r2dbc:
-    url: r2dbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/${DB_NAME:llmgateway}
+    url: r2dbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5433}/${DB_NAME:llmgateway}
     username: ${DB_USER:postgres}
     password: ${DB_PASSWORD:postgrespassword}
     pool:
@@ -18,7 +18,7 @@ spring:
   # Flyway Migrations (runs synchronously on startup via JDBC)
   flyway:
     enabled: true
-    url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/${DB_NAME:llmgateway}
+    url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5433}/${DB_NAME:llmgateway}
     user: ${DB_USER:postgres}
     password: ${DB_PASSWORD:postgrespassword}
     locations: classpath:db/migration

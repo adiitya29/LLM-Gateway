@@ -20,3 +20,4 @@ public class ResolvedRoute {
     private String targetModel;
     private List<RouteTarget> allTargets;
 }
+

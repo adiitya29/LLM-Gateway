@@ -44,3 +44,4 @@ public class ModelCard {
     @JsonProperty("parent")
     private String parent;
 }
+

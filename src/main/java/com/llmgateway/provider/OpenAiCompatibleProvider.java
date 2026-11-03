@@ -157,3 +157,4 @@ public class OpenAiCompatibleProvider implements LlmProvider {
         return trimmed + "/chat/completions";
     }
 }
+

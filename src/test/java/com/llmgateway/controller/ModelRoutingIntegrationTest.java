@@ -312,3 +312,4 @@ class ModelRoutingIntegrationTest {
                 .withRequestBody(matchingJsonPath("$.model", equalTo("llama-3.1-8b-instant"))));
     }
 }
+

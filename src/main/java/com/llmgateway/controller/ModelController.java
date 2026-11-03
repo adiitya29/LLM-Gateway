@@ -36,3 +36,4 @@ public class ModelController {
                 .orElseGet(() -> ResponseEntity.notFound().build());
     }
 }
+

@@ -25,3 +25,4 @@ public class ModelListResponse {
     @JsonProperty("data")
     private List<ModelCard> data;
 }
+

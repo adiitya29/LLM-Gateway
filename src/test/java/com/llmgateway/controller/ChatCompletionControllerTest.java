@@ -28,7 +28,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 @SpringBootTest
 @TestPropertySource(properties = {
         "spring.flyway.enabled=false",
-        "spring.r2dbc.url=r2dbc:postgresql://localhost:5432/llmgateway",
+        "spring.r2dbc.url=r2dbc:postgresql://localhost:5433/llmgateway",
         "spring.data.redis.host=localhost",
         "spring.data.redis.port=6379"
 })
@@ -41,6 +41,15 @@ class ChatCompletionControllerTest {
 
     @Autowired
     private GatewayProperties gatewayProperties;
+
+    @Autowired
+    private com.llmgateway.service.ProviderRegistry providerRegistry;
+
+    @Autowired
+    private org.springframework.web.reactive.function.client.WebClient.Builder webClientBuilder;
+
+    @Autowired
+    private com.fasterxml.jackson.databind.ObjectMapper objectMapper;
 
     private WebTestClient webTestClient;
 
@@ -61,8 +70,17 @@ class ChatCompletionControllerTest {
     @BeforeEach
     void setup() {
         this.webTestClient = WebTestClient.bindToController(chatCompletionController).build();
-        gatewayProperties.getUpstream().setBaseUrl("http://localhost:" + wireMockServer.port() + "/v1");
         wireMockServer.resetAll();
+
+        com.llmgateway.provider.OpenAiCompatibleProvider openai = new com.llmgateway.provider.OpenAiCompatibleProvider(
+                "openai",
+                "http://localhost:" + wireMockServer.port() + "/v1",
+                "test-key",
+                java.util.Map.of(),
+                webClientBuilder,
+                objectMapper
+        );
+        providerRegistry.registerProvider(openai);
     }
 
     @Test

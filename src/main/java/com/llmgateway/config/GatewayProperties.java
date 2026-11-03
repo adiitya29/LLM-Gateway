@@ -24,7 +24,7 @@ public class GatewayProperties {
 
     @Data
     public static class Admin {
-        private String masterKey = "gw-master-secret-key-change-in-prod";
+        private String masterKey = "dev-admin-key";
     }
 
     @Data

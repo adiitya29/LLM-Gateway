@@ -65,7 +65,7 @@ public class GatewayAuthFilter implements WebFilter, Ordered {
 
             if (authHeader == null || !authHeader.startsWith("Bearer ")) {
                 return writeJsonError(exchange, HttpStatus.UNAUTHORIZED,
-                        "Missing or malformed Authorization header. Expected 'Bearer sk-gw-...'",
+                        "Missing or malformed Authorization header. Expected 'Bearer <key>'",
                         "invalid_request_error", "missing_api_key");
             }
 

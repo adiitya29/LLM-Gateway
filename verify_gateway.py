@@ -8,6 +8,7 @@ Testing Phase 3:
 """
 import urllib.request
 import json
+import os
 from openai import OpenAI, PermissionDeniedError, AuthenticationError
 
 def create_admin_key(name="Python Test Key", allowed_models=None):
@@ -23,7 +24,7 @@ def create_admin_key(name="Python Test Key", allowed_models=None):
         data=json.dumps(payload).encode("utf-8"),
         headers={
             "Content-Type": "application/json",
-            "X-Admin-Master-Key": "gw-master-secret-key-change-in-prod"
+            "X-Admin-Master-Key": os.getenv("GATEWAY_MASTER_KEY", "dev-admin-key")
         },
         method="POST"
     )

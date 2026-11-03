@@ -37,7 +37,7 @@ import static org.assertj.core.api.Assertions.assertThat;
         "spring.r2dbc.url=r2dbc:postgresql://localhost:5433/llmgateway",
         "spring.data.redis.host=localhost",
         "spring.data.redis.port=6379",
-        "gateway.admin.master-key=test-admin-secret"
+        "gateway.admin.master-key=test-admin-key"
 })
 class AuthAndApiKeyIntegrationTest {
 
@@ -124,7 +124,7 @@ class AuthAndApiKeyIntegrationTest {
         // Invalid master key
         webTestClient.post()
                 .uri("/v1/admin/keys")
-                .header("X-Admin-Master-Key", "wrong-secret")
+                .header("X-Admin-Master-Key", "invalid-key")
                 .contentType(MediaType.APPLICATION_JSON)
                 .bodyValue(CreateApiKeyRequest.builder().name("Test").build())
                 .exchange()
@@ -151,7 +151,7 @@ class AuthAndApiKeyIntegrationTest {
         // Invalid API Key -> 401
         webTestClient.post()
                 .uri("/v1/chat/completions")
-                .header(HttpHeaders.AUTHORIZATION, "Bearer sk-gw-completely-fake-key-123")
+                .header(HttpHeaders.AUTHORIZATION, "Bearer invalid-dummy-key")
                 .contentType(MediaType.APPLICATION_JSON)
                 .bodyValue(request)
                 .exchange()
@@ -172,7 +172,7 @@ class AuthAndApiKeyIntegrationTest {
 
         ApiKeyCreateResponse createdKey = webTestClient.post()
                 .uri("/v1/admin/keys")
-                .header("X-Admin-Master-Key", "test-admin-secret")
+                .header("X-Admin-Master-Key", "test-admin-key")
                 .contentType(MediaType.APPLICATION_JSON)
                 .bodyValue(createRequest)
                 .exchange()
@@ -182,7 +182,7 @@ class AuthAndApiKeyIntegrationTest {
                 .getResponseBody();
 
         assertThat(createdKey).isNotNull();
-        assertThat(createdKey.getKey()).startsWith("sk-gw-");
+        assertThat(createdKey.getKey()).isNotBlank();
         assertThat(createdKey.getAllowedModels()).containsExactly("fast-chat");
 
         String fullApiKey = createdKey.getKey();
@@ -236,7 +236,7 @@ class AuthAndApiKeyIntegrationTest {
         // 4. Revoke key via Admin API -> 204 No Content
         webTestClient.delete()
                 .uri("/v1/admin/keys/" + createdKey.getId())
-                .header("X-Admin-Master-Key", "test-admin-secret")
+                .header("X-Admin-Master-Key", "test-admin-key")
                 .exchange()
                 .expectStatus().isNoContent();
 

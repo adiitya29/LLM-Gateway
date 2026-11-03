@@ -59,7 +59,7 @@ Health endpoint: `http://localhost:8080/actuator/health`
 ```bash
 curl -X POST http://localhost:8080/v1/admin/keys \
   -H "Content-Type: application/json" \
-  -H "X-Admin-Master-Key: gw-master-secret-key-change-in-prod" \
+  -H "X-Admin-Master-Key: dev-admin-key" \
   -d '{
     "name": "Developer Key",
     "allowed_models": ["fast-chat", "smart-chat"],
@@ -72,13 +72,13 @@ curl -X POST http://localhost:8080/v1/admin/keys \
 #### List All Registered Keys (Prefix Only)
 ```bash
 curl http://localhost:8080/v1/admin/keys \
-  -H "X-Admin-Master-Key: gw-master-secret-key-change-in-prod"
+  -H "X-Admin-Master-Key: dev-admin-key"
 ```
 
 #### Revoke a Key
 ```bash
 curl -X DELETE http://localhost:8080/v1/admin/keys/{key_id} \
-  -H "X-Admin-Master-Key: gw-master-secret-key-change-in-prod"
+  -H "X-Admin-Master-Key: dev-admin-key"
 ```
 
 ---

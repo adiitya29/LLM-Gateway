@@ -53,7 +53,37 @@ Health endpoint: `http://localhost:8080/actuator/health`
 
 ## Testing the Gateway
 
-### List Available Models / Aliases (Phase 2)
+### 1. Key Management API (Phase 3)
+
+#### Create a New Gateway API Key
+```bash
+curl -X POST http://localhost:8080/v1/admin/keys \
+  -H "Content-Type: application/json" \
+  -H "X-Admin-Master-Key: dev-admin-key" \
+  -d '{
+    "name": "Developer Key",
+    "allowed_models": ["fast-chat", "smart-chat"],
+    "budget_micro_usd": 10000000,
+    "rate_limit_rpm": 60
+  }'
+```
+*Returns the full raw key (`sk-gw-...`) **once** at creation.*
+
+#### List All Registered Keys (Prefix Only)
+```bash
+curl http://localhost:8080/v1/admin/keys \
+  -H "X-Admin-Master-Key: dev-admin-key"
+```
+
+#### Revoke a Key
+```bash
+curl -X DELETE http://localhost:8080/v1/admin/keys/{key_id} \
+  -H "X-Admin-Master-Key: dev-admin-key"
+```
+
+---
+
+### 2. List Available Models / Aliases (Phase 2)
 ```bash
 curl http://localhost:8080/v1/models
 ```

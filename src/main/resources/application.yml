@@ -34,7 +34,7 @@ spring:
 # Gateway Master Configuration
 gateway:
   admin:
-    master-key: ${GATEWAY_MASTER_KEY:gw-master-secret-key-change-in-prod}
+    master-key: ${GATEWAY_MASTER_KEY:dev-admin-key}
   upstream:
     base-url: ${UPSTREAM_BASE_URL:http://localhost:8089/v1}
     api-key: ${UPSTREAM_API_KEY:}

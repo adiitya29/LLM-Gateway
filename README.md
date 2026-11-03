@@ -51,27 +51,44 @@ Health endpoint: `http://localhost:8080/actuator/health`
 
 ---
 
-## Testing the Gateway (Phase 1)
+## Testing the Gateway
 
-### cURL (Non-Streaming)
+### List Available Models / Aliases (Phase 2)
+```bash
+curl http://localhost:8080/v1/models
+```
+
+### cURL (Routing via Alias `fast-chat` -> Groq)
 ```bash
 curl -X POST http://localhost:8080/v1/chat/completions \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer sk-gw-test" \
   -d '{
-    "model": "gpt-4o-mini",
+    "model": "fast-chat",
     "messages": [{"role": "user", "content": "Hello!"}],
     "stream": false
   }'
 ```
 
-### cURL (Streaming SSE)
+### cURL (Routing via Alias `gemini-flash` -> Gemini)
+```bash
+curl -X POST http://localhost:8080/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer sk-gw-test" \
+  -d '{
+    "model": "gemini-flash",
+    "messages": [{"role": "user", "content": "Explain quantum computing in one sentence."}],
+    "stream": false
+  }'
+```
+
+### cURL (Streaming SSE via `fast-chat`)
 ```bash
 curl -N -X POST http://localhost:8080/v1/chat/completions \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer sk-gw-test" \
   -d '{
-    "model": "gpt-4o-mini",
+    "model": "fast-chat",
     "messages": [{"role": "user", "content": "Tell me a joke."}],
     "stream": true
   }'

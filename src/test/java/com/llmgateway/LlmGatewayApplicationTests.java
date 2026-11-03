@@ -7,7 +7,7 @@ import org.springframework.test.context.TestPropertySource;
 @SpringBootTest
 @TestPropertySource(properties = {
     "spring.flyway.enabled=false",
-    "spring.r2dbc.url=r2dbc:postgresql://localhost:5432/llmgateway",
+    "spring.r2dbc.url=r2dbc:postgresql://localhost:5433/llmgateway",
     "spring.data.redis.host=localhost",
     "spring.data.redis.port=6379"
 })

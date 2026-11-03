@@ -1,8 +1,16 @@
 package com.llmgateway.config;
 
+import lombok.AllArgsConstructor;
+import lombok.Builder;
 import lombok.Data;
+import lombok.NoArgsConstructor;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.context.annotation.Configuration;
+
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
 
 @Data
 @Configuration
@@ -11,6 +19,8 @@ public class GatewayProperties {
 
     private Admin admin = new Admin();
     private Upstream upstream = new Upstream();
+    private Map<String, ProviderConfig> providers = new HashMap<>();
+    private Map<String, ModelRoute> routes = new HashMap<>();
 
     @Data
     public static class Admin {
@@ -24,5 +34,40 @@ public class GatewayProperties {
         private int connectTimeoutMs = 5000;
         private int readTimeoutMs = 60000;
     }
-}
 
+    @Data
+    @Builder
+    @NoArgsConstructor
+    @AllArgsConstructor
+    public static class ProviderConfig {
+        private String baseUrl;
+        @Builder.Default
+        private String apiKey = "";
+        @Builder.Default
+        private int connectTimeoutMs = 5000;
+        @Builder.Default
+        private int readTimeoutMs = 60000;
+        @Builder.Default
+        private Map<String, String> headers = new HashMap<>();
+    }
+
+    @Data
+    @Builder
+    @NoArgsConstructor
+    @AllArgsConstructor
+    public static class ModelRoute {
+        @Builder.Default
+        private String description = "";
+        @Builder.Default
+        private List<RouteTarget> targets = new ArrayList<>();
+    }
+
+    @Data
+    @Builder
+    @NoArgsConstructor
+    @AllArgsConstructor
+    public static class RouteTarget {
+        private String provider;
+        private String model;
+    }
+}

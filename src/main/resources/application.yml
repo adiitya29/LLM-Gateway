@@ -41,6 +41,53 @@ gateway:
     connect-timeout-ms: 5000
     read-timeout-ms: 60000
 
+  # Upstream Providers
+  providers:
+    gemini:
+      base-url: ${GEMINI_BASE_URL:https://generativelanguage.googleapis.com/v1beta/openai}
+      api-key: ${GEMINI_API_KEY:}
+      connect-timeout-ms: 5000
+      read-timeout-ms: 30000
+    groq:
+      base-url: ${GROQ_BASE_URL:https://api.groq.com/openai/v1}
+      api-key: ${GROQ_API_KEY:}
+      connect-timeout-ms: 5000
+      read-timeout-ms: 30000
+    openai:
+      base-url: ${OPENAI_BASE_URL:https://api.openai.com/v1}
+      api-key: ${OPENAI_API_KEY:}
+      connect-timeout-ms: 5000
+      read-timeout-ms: 30000
+
+  # Model Alias Routing
+  routes:
+    fast-chat:
+      description: "Ultra-fast low-latency chat"
+      targets:
+        - provider: groq
+          model: llama-3.1-8b-instant
+        - provider: gemini
+          model: gemini-1.5-flash
+    smart-chat:
+      description: "High-reasoning smart chat"
+      targets:
+        - provider: gemini
+          model: gemini-1.5-flash
+        - provider: groq
+          model: llama-3.3-70b-versatile
+    gemini-flash:
+      description: "Google Gemini 1.5 Flash"
+      targets:
+        - provider: gemini
+          model: gemini-1.5-flash
+    gpt-4o-mini:
+      description: "OpenAI GPT-4o Mini"
+      targets:
+        - provider: openai
+          model: gpt-4o-mini
+        - provider: gemini
+          model: gemini-1.5-flash
+
 # Actuator & Observability
 management:
   endpoints:

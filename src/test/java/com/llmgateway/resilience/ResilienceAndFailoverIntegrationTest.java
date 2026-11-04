@@ -38,7 +38,8 @@ import static org.assertj.core.api.Assertions.assertThat;
         "spring.data.redis.port=6379",
         "gateway.admin.master-key=test-admin-key",
         "gateway.providers.groq.read-timeout-ms=2000",
-        "gateway.providers.gemini.read-timeout-ms=5000"
+        "gateway.providers.gemini.read-timeout-ms=5000",
+        "gateway.cache.enabled=false"
 })
 class ResilienceAndFailoverIntegrationTest {
 

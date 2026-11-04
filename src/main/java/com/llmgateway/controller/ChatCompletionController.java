@@ -5,6 +5,8 @@ import com.llmgateway.dto.ChatCompletionResponse;
 import com.llmgateway.exception.InsufficientBudgetException;
 import com.llmgateway.exception.RateLimitException;
 import com.llmgateway.model.ApiKey;
+import com.llmgateway.model.UsageLog;
+import com.llmgateway.repository.UsageLogRepository;
 import com.llmgateway.security.GatewayAuthFilter;
 import com.llmgateway.service.*;
 import org.slf4j.Logger;
@@ -23,6 +25,7 @@ import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
 import java.util.Map;
+import java.util.UUID;
 
 @RestController
 @RequestMapping("/v1")
@@ -36,19 +39,25 @@ public class ChatCompletionController {
     private final PricingService pricingService;
     private final BudgetService budgetService;
     private final RateLimitService rateLimitService;
+    private final MultiTierCacheService cacheService;
+    private final UsageLogRepository usageLogRepository;
 
     public ChatCompletionController(LlmProxyService proxyService,
                                   ModelRoutingService routingService,
                                   TokenizerService tokenizerService,
                                   PricingService pricingService,
                                   BudgetService budgetService,
-                                  RateLimitService rateLimitService) {
+                                  RateLimitService rateLimitService,
+                                  MultiTierCacheService cacheService,
+                                  UsageLogRepository usageLogRepository) {
         this.proxyService = proxyService;
         this.routingService = routingService;
         this.tokenizerService = tokenizerService;
         this.pricingService = pricingService;
         this.budgetService = budgetService;
         this.rateLimitService = rateLimitService;
+        this.cacheService = cacheService;
+        this.usageLogRepository = usageLogRepository;
     }
 
     @PostMapping(value = "/chat/completions", consumes = MediaType.APPLICATION_JSON_VALUE)
@@ -76,10 +85,59 @@ public class ChatCompletionController {
                     .body(errorBody));
         }
 
-        // 2. Distributed Rate Limiting (Bucket4j with Redis Lettuce)
+        // 2. Cache bypass header check
+        String bypassHeader = exchange.getRequest().getHeaders().getFirst("X-Gateway-Bypass-Cache");
+        boolean bypassCache = "true".equalsIgnoreCase(bypassHeader);
+        long startTime = System.currentTimeMillis();
+
+        // 3. Distributed Rate Limiting (Bucket4j with Redis Lettuce)
         return rateLimitService.checkRateLimit(apiKey)
-                .then(Mono.defer(() -> {
-                    // 3. Resolve route & token estimate
+                .then(cacheService.lookup(request, bypassCache))
+                .flatMap(cacheResult -> {
+                    if (cacheResult.isHit()) {
+                        long latencyMs = System.currentTimeMillis() - startTime;
+                        String cacheHeader = cacheResult.getHeaderValue(); // HIT_EXACT or HIT_SEMANTIC
+                        UUID apiKeyId = apiKey != null ? apiKey.getId() : null;
+                        String requestId = "req_cached_" + UUID.randomUUID().toString().replace("-", "").substring(0, 12);
+
+                        ChatCompletionResponse cachedResponse = cacheResult.response();
+                        int promptTokens = cachedResponse.getUsage() != null ? cachedResponse.getUsage().getPromptTokens() : 0;
+                        int completionTokens = cachedResponse.getUsage() != null ? cachedResponse.getUsage().getCompletionTokens() : 0;
+                        int totalTokens = promptTokens + completionTokens;
+
+                        UsageLog logEntry = UsageLog.builder()
+                                .apiKeyId(apiKeyId)
+                                .requestId(requestId)
+                                .modelAlias(request.getModel())
+                                .providerUsed("cache")
+                                .actualModel(cachedResponse.getModel() != null ? cachedResponse.getModel() : request.getModel())
+                                .promptTokens(promptTokens)
+                                .completionTokens(completionTokens)
+                                .totalTokens(totalTokens)
+                                .costMicroUsd(0L) // 0 cost on cache hit!
+                                .latencyMs((int) latencyMs)
+                                .timeToFirstTokenMs(0)
+                                .cacheHit(cacheHeader)
+                                .fallbackUsed(false)
+                                .statusCode(200)
+                                .build();
+                        usageLogRepository.save(logEntry).subscribe();
+
+                        if (request.isStreaming()) {
+                            Flux<ServerSentEvent<String>> stream = cacheService.replaySseStream(cachedResponse);
+                            return Mono.just(ResponseEntity.ok()
+                                    .header("X-Gateway-Cache", cacheHeader)
+                                    .contentType(MediaType.TEXT_EVENT_STREAM)
+                                    .body(stream));
+                        } else {
+                            return Mono.just(ResponseEntity.ok()
+                                    .header("X-Gateway-Cache", cacheHeader)
+                                    .contentType(MediaType.APPLICATION_JSON)
+                                    .body(cachedResponse));
+                        }
+                    }
+
+                    // 4. Cache MISS -> Resolve route & token estimate
                     ResolvedRoute route = routingService.resolveRoute(request.getModel());
                     int promptTokens = tokenizerService.countPromptTokens(request);
                     long estimatedCost = pricingService.estimateMaxCost(
@@ -89,24 +147,26 @@ public class ChatCompletionController {
                             request.getMaxTokens()
                     );
 
-                    // 4. Reserve-then-settle pre-flight budget reservation
+                    // 5. Reserve-then-settle pre-flight budget reservation
                     return budgetService.reserve(apiKey, estimatedCost)
                             .flatMap(reservedCost -> {
                                 if (request.isStreaming()) {
                                     Flux<ServerSentEvent<String>> stream = proxyService.forwardStreaming(
                                             request, apiKey, route, reservedCost, promptTokens);
                                     return Mono.just(ResponseEntity.ok()
+                                            .header("X-Gateway-Cache", "MISS")
                                             .contentType(MediaType.TEXT_EVENT_STREAM)
                                             .body(stream));
                                 } else {
                                     return proxyService.forwardNonStreaming(
                                             request, apiKey, route, reservedCost, promptTokens)
                                             .map(response -> ResponseEntity.ok()
+                                                    .header("X-Gateway-Cache", "MISS")
                                                     .contentType(MediaType.APPLICATION_JSON)
                                                     .body(response));
                                 }
                             });
-                }))
+                })
                 .onErrorResume(RateLimitException.class, ex -> {
                     Map<String, Object> errorBody = Map.of(
                             "error", Map.of(

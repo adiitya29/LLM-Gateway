@@ -46,6 +46,7 @@ public class LlmProxyService {
     private final UsageLogRepository usageLogRepository;
     private final CircuitBreakerRegistry circuitBreakerRegistry;
     private final GatewayProperties properties;
+    private final MultiTierCacheService cacheService;
 
     public LlmProxyService(ModelRoutingService routingService,
                            ProviderRegistry providerRegistry,
@@ -55,7 +56,8 @@ public class LlmProxyService {
                            BudgetService budgetService,
                            UsageLogRepository usageLogRepository,
                            CircuitBreakerRegistry circuitBreakerRegistry,
-                           GatewayProperties properties) {
+                           GatewayProperties properties,
+                           MultiTierCacheService cacheService) {
         this.routingService = routingService;
         this.providerRegistry = providerRegistry;
         this.objectMapper = objectMapper;
@@ -65,6 +67,7 @@ public class LlmProxyService {
         this.usageLogRepository = usageLogRepository;
         this.circuitBreakerRegistry = circuitBreakerRegistry;
         this.properties = properties;
+        this.cacheService = cacheService;
     }
 
     public Mono<ChatCompletionResponse> forwardNonStreaming(ChatCompletionRequest request) {
@@ -161,6 +164,7 @@ public class LlmProxyService {
                                         .statusCode(200)
                                         .build();
                                 usageLogRepository.save(logEntry).subscribe();
+                                cacheService.cacheResponse(request, response).subscribe();
                             })
                             .thenReturn(response);
                 })
@@ -257,6 +261,24 @@ public class LlmProxyService {
                         .statusCode(statusCode)
                         .build();
                 usageLogRepository.save(logEntry).subscribe();
+
+                if (statusCode == 200 && accumulatedContent.length() > 0) {
+                    ChatCompletionResponse synthesized = ChatCompletionResponse.builder()
+                            .id(requestId)
+                            .model(request.getModel())
+                            .created(System.currentTimeMillis() / 1000)
+                            .choices(List.of(Choice.builder()
+                                    .index(0)
+                                    .message(ChatMessage.builder()
+                                            .role("assistant")
+                                            .content(accumulatedContent.toString())
+                                            .build())
+                                    .finishReason("stop")
+                                    .build()))
+                            .usage(new Usage(promptTokens, compTokens, totalTokens))
+                            .build();
+                    cacheService.cacheResponse(request, synthesized).subscribe();
+                }
             }
         })
         .map(chunk -> {

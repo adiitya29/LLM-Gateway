@@ -58,22 +58,30 @@ public class OpenAiCompatibleProvider implements LlmProvider {
         String targetUrl = resolveChatCompletionsUrl(baseUrl);
         log.debug("Provider [{}] executing non-streaming chat completion at: {}", name, targetUrl);
 
-        return webClient.post()
-                .uri(targetUrl)
-                .contentType(MediaType.APPLICATION_JSON)
-                .accept(MediaType.APPLICATION_JSON)
-                .headers(this::applyHeaders)
-                .bodyValue(request)
-                .retrieve()
-                .bodyToMono(ChatCompletionResponse.class)
-                .map(response -> {
-                    // Ensure the requested model/alias is reflected back to the client
-                    if (request.getModel() != null) {
-                        response.setModel(request.getModel());
-                    }
-                    return response;
-                })
-                .doOnError(err -> log.error("Provider [{}] chat call failed: {}", name, err.getMessage()));
+        return Mono.deferContextual(contextView -> {
+            String requestId = contextView.getOrDefault("X-Request-Id", null);
+            return webClient.post()
+                    .uri(targetUrl)
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .accept(MediaType.APPLICATION_JSON)
+                    .headers(headers -> {
+                        applyHeaders(headers);
+                        if (requestId != null && !requestId.isBlank()) {
+                            headers.set("X-Request-Id", requestId);
+                        }
+                    })
+                    .bodyValue(request)
+                    .retrieve()
+                    .bodyToMono(ChatCompletionResponse.class)
+                    .map(response -> {
+                        // Ensure the requested model/alias is reflected back to the client
+                        if (request.getModel() != null) {
+                            response.setModel(request.getModel());
+                        }
+                        return response;
+                    })
+                    .doOnError(err -> log.error("Provider [{}] chat call failed: {}", name, err.getMessage()));
+        });
     }
 
     @Override
@@ -83,32 +91,40 @@ public class OpenAiCompatibleProvider implements LlmProvider {
 
         ChatCompletionRequest preparedRequest = prepareStreamingRequest(request);
 
-        return webClient.post()
-                .uri(targetUrl)
-                .contentType(MediaType.APPLICATION_JSON)
-                .accept(MediaType.TEXT_EVENT_STREAM)
-                .headers(this::applyHeaders)
-                .bodyValue(preparedRequest)
-                .retrieve()
-                .bodyToFlux(SSE_TYPE)
-                .takeWhile(sse -> sse.data() != null && !"[DONE]".equals(sse.data().trim()))
-                .flatMap(sse -> {
-                    String data = sse.data().trim();
-                    if (data.isBlank()) {
-                        return Mono.empty();
-                    }
-                    try {
-                        ChatCompletionChunk chunk = objectMapper.readValue(data, ChatCompletionChunk.class);
-                        if (request.getModel() != null) {
-                            chunk.setModel(request.getModel());
+        return Flux.deferContextual(contextView -> {
+            String requestId = contextView.getOrDefault("X-Request-Id", null);
+            return webClient.post()
+                    .uri(targetUrl)
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .accept(MediaType.TEXT_EVENT_STREAM)
+                    .headers(headers -> {
+                        applyHeaders(headers);
+                        if (requestId != null && !requestId.isBlank()) {
+                            headers.set("X-Request-Id", requestId);
                         }
-                        return Mono.just(chunk);
-                    } catch (Exception e) {
-                        log.warn("Provider [{}] failed to parse chunk: {}", name, e.getMessage());
-                        return Mono.empty();
-                    }
-                })
-                .doOnError(err -> log.error("Provider [{}] stream call encountered error: {}", name, err.getMessage()));
+                    })
+                    .bodyValue(preparedRequest)
+                    .retrieve()
+                    .bodyToFlux(SSE_TYPE)
+                    .takeWhile(sse -> sse.data() != null && !"[DONE]".equals(sse.data().trim()))
+                    .flatMap(sse -> {
+                        String data = sse.data().trim();
+                        if (data.isBlank()) {
+                            return Mono.empty();
+                        }
+                        try {
+                            ChatCompletionChunk chunk = objectMapper.readValue(data, ChatCompletionChunk.class);
+                            if (request.getModel() != null) {
+                                chunk.setModel(request.getModel());
+                            }
+                            return Mono.just(chunk);
+                        } catch (Exception e) {
+                            log.warn("Provider [{}] failed to parse chunk: {}", name, e.getMessage());
+                            return Mono.empty();
+                        }
+                    })
+                    .doOnError(err -> log.error("Provider [{}] stream call encountered error: {}", name, err.getMessage()));
+        });
     }
 
     private void applyHeaders(HttpHeaders headers) {

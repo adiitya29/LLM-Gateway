@@ -115,4 +115,16 @@ management:
   endpoint:
     health:
       show-details: always
+    prometheus:
+      access: unrestricted
+  metrics:
+    tags:
+      application: llm-gateway
+    distribution:
+      percentiles-histogram:
+        llm_gateway_latency_seconds: true
+        llm_gateway_time_to_first_token_seconds: true
+      sla:
+        llm_gateway_latency_seconds: 100ms, 250ms, 500ms, 1s, 2s, 5s
+        llm_gateway_time_to_first_token_seconds: 50ms, 100ms, 200ms, 500ms, 1s
 

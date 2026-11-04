@@ -47,6 +47,7 @@ public class LlmProxyService {
     private final CircuitBreakerRegistry circuitBreakerRegistry;
     private final GatewayProperties properties;
     private final MultiTierCacheService cacheService;
+    private final GatewayMetricsService metricsService;
 
     public LlmProxyService(ModelRoutingService routingService,
                            ProviderRegistry providerRegistry,
@@ -57,7 +58,8 @@ public class LlmProxyService {
                            UsageLogRepository usageLogRepository,
                            CircuitBreakerRegistry circuitBreakerRegistry,
                            GatewayProperties properties,
-                           MultiTierCacheService cacheService) {
+                           MultiTierCacheService cacheService,
+                           GatewayMetricsService metricsService) {
         this.routingService = routingService;
         this.providerRegistry = providerRegistry;
         this.objectMapper = objectMapper;
@@ -68,6 +70,7 @@ public class LlmProxyService {
         this.circuitBreakerRegistry = circuitBreakerRegistry;
         this.properties = properties;
         this.cacheService = cacheService;
+        this.metricsService = metricsService;
     }
 
     public Mono<ChatCompletionResponse> forwardNonStreaming(ChatCompletionRequest request) {
@@ -82,13 +85,25 @@ public class LlmProxyService {
             ResolvedRoute route,
             long reservedCost,
             int estimatedPromptTokens) {
+        String reqId = "req_" + UUID.randomUUID().toString().replace("-", "").substring(0, 16);
+        return forwardNonStreaming(request, apiKey, route, reservedCost, estimatedPromptTokens, reqId);
+    }
+
+    public Mono<ChatCompletionResponse> forwardNonStreaming(
+            ChatCompletionRequest request,
+            ApiKey apiKey,
+            ResolvedRoute route,
+            long reservedCost,
+            int estimatedPromptTokens,
+            String requestId) {
 
         List<RouteTarget> targets = getRouteTargets(route);
         long startTime = System.currentTimeMillis();
-        String requestId = "req_" + UUID.randomUUID().toString().replace("-", "").substring(0, 16);
+        String reqId = (requestId != null && !requestId.isBlank()) ? requestId
+                : "req_" + UUID.randomUUID().toString().replace("-", "").substring(0, 16);
 
         return executeNonStreamingWithFallback(
-                request, apiKey, route, targets, 0, false, reservedCost, estimatedPromptTokens, startTime, requestId
+                request, apiKey, route, targets, 0, false, reservedCost, estimatedPromptTokens, startTime, reqId
         );
     }
 
@@ -165,6 +180,12 @@ public class LlmProxyService {
                                         .build();
                                 usageLogRepository.save(logEntry).subscribe();
                                 cacheService.cacheResponse(request, response).subscribe();
+
+                                Duration latency = Duration.ofMillis(latencyMs);
+                                String keyPrefix = apiKey != null ? apiKey.getKeyPrefix() : "anonymous";
+                                metricsService.recordRequest(provider.getName(), request.getModel(), 200, "MISS", latency);
+                                metricsService.recordTokens(provider.getName(), request.getModel(), promptTokens, completionTokens);
+                                metricsService.recordCost(keyPrefix, provider.getName(), request.getModel(), actualCost);
                             })
                             .thenReturn(response);
                 })
@@ -204,10 +225,22 @@ public class LlmProxyService {
             ResolvedRoute route,
             long reservedCost,
             int estimatedPromptTokens) {
+        String reqId = "req_" + UUID.randomUUID().toString().replace("-", "").substring(0, 16);
+        return forwardStreaming(request, apiKey, route, reservedCost, estimatedPromptTokens, reqId);
+    }
+
+    public Flux<ServerSentEvent<String>> forwardStreaming(
+            ChatCompletionRequest request,
+            ApiKey apiKey,
+            ResolvedRoute route,
+            long reservedCost,
+            int estimatedPromptTokens,
+            String requestId) {
 
         List<RouteTarget> targets = getRouteTargets(route);
         long startTime = System.currentTimeMillis();
-        String requestId = "req_" + UUID.randomUUID().toString().replace("-", "").substring(0, 16);
+        String reqId = (requestId != null && !requestId.isBlank()) ? requestId
+                : "req_" + UUID.randomUUID().toString().replace("-", "").substring(0, 16);
 
         AtomicBoolean firstTokenEmitted = new AtomicBoolean(false);
         AtomicLong ttftMs = new AtomicLong(-1);
@@ -247,7 +280,7 @@ public class LlmProxyService {
                 int statusCode = (signalType == SignalType.CANCEL) ? 499 : (signalType == SignalType.ON_ERROR ? 500 : 200);
                 UsageLog logEntry = UsageLog.builder()
                         .apiKeyId(apiKeyId)
-                        .requestId(requestId)
+                        .requestId(reqId)
                         .modelAlias(request.getModel())
                         .providerUsed(winningTarget.getProvider())
                         .actualModel(winningTarget.getModel())
@@ -262,9 +295,18 @@ public class LlmProxyService {
                         .build();
                 usageLogRepository.save(logEntry).subscribe();
 
+                Duration latency = Duration.ofMillis(latencyMs);
+                String keyPrefix = apiKey != null ? apiKey.getKeyPrefix() : "anonymous";
+                metricsService.recordRequest(winningTarget.getProvider(), request.getModel(), statusCode, "MISS", latency);
+                if (ttft != null && ttft >= 0) {
+                    metricsService.recordTtft(winningTarget.getProvider(), request.getModel(), Duration.ofMillis(ttft));
+                }
+                metricsService.recordTokens(winningTarget.getProvider(), request.getModel(), promptTokens, compTokens);
+                metricsService.recordCost(keyPrefix, winningTarget.getProvider(), request.getModel(), actualCost);
+
                 if (statusCode == 200 && accumulatedContent.length() > 0) {
                     ChatCompletionResponse synthesized = ChatCompletionResponse.builder()
-                            .id(requestId)
+                            .id(reqId)
                             .model(request.getModel())
                             .created(System.currentTimeMillis() / 1000)
                             .choices(List.of(Choice.builder()

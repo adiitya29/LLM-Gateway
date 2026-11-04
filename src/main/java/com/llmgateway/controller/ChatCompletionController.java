@@ -7,6 +7,7 @@ import com.llmgateway.exception.RateLimitException;
 import com.llmgateway.model.ApiKey;
 import com.llmgateway.model.UsageLog;
 import com.llmgateway.repository.UsageLogRepository;
+import com.llmgateway.security.CorrelationIdFilter;
 import com.llmgateway.security.GatewayAuthFilter;
 import com.llmgateway.service.*;
 import org.slf4j.Logger;
@@ -24,6 +25,7 @@ import org.springframework.web.server.ServerWebExchange;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
+import java.time.Duration;
 import java.util.Map;
 import java.util.UUID;
 
@@ -41,6 +43,7 @@ public class ChatCompletionController {
     private final RateLimitService rateLimitService;
     private final MultiTierCacheService cacheService;
     private final UsageLogRepository usageLogRepository;
+    private final GatewayMetricsService metricsService;
 
     public ChatCompletionController(LlmProxyService proxyService,
                                   ModelRoutingService routingService,
@@ -49,7 +52,8 @@ public class ChatCompletionController {
                                   BudgetService budgetService,
                                   RateLimitService rateLimitService,
                                   MultiTierCacheService cacheService,
-                                  UsageLogRepository usageLogRepository) {
+                                  UsageLogRepository usageLogRepository,
+                                  GatewayMetricsService metricsService) {
         this.proxyService = proxyService;
         this.routingService = routingService;
         this.tokenizerService = tokenizerService;
@@ -58,20 +62,30 @@ public class ChatCompletionController {
         this.rateLimitService = rateLimitService;
         this.cacheService = cacheService;
         this.usageLogRepository = usageLogRepository;
+        this.metricsService = metricsService;
     }
 
     @PostMapping(value = "/chat/completions", consumes = MediaType.APPLICATION_JSON_VALUE)
     public Mono<ResponseEntity<?>> createChatCompletion(
             @RequestBody ChatCompletionRequest request,
             ServerWebExchange exchange) {
-        log.info("Received chat completion request for model: {}, stream: {}",
-                request.getModel(), request.isStreaming());
+        long startTime = System.currentTimeMillis();
+        String requestId = exchange.getAttributeOrDefault(
+                CorrelationIdFilter.REQUEST_ID_ATTR,
+                "req_" + UUID.randomUUID().toString().replace("-", "").substring(0, 16)
+        );
+
+        log.info("[{}] Received chat completion request for model: {}, stream: {}",
+                requestId, request.getModel(), request.isStreaming());
 
         // 1. Model Authorization check against authenticated API key
         ApiKey apiKey = exchange.getAttribute(GatewayAuthFilter.API_KEY_ATTR);
         if (apiKey != null && !apiKey.isModelAllowed(request.getModel())) {
-            log.warn("API key [{}] not authorized for requested model [{}]",
-                    apiKey.getKeyPrefix(), request.getModel());
+            log.warn("[{}] API key [{}] not authorized for requested model [{}]",
+                    requestId, apiKey.getKeyPrefix(), request.getModel());
+
+            Duration latency = Duration.ofMillis(System.currentTimeMillis() - startTime);
+            metricsService.recordRequest("gateway", request.getModel(), HttpStatus.FORBIDDEN.value(), "NONE", latency);
 
             Map<String, Object> errorBody = Map.of(
                     "error", Map.of(
@@ -88,7 +102,6 @@ public class ChatCompletionController {
         // 2. Cache bypass header check
         String bypassHeader = exchange.getRequest().getHeaders().getFirst("X-Gateway-Bypass-Cache");
         boolean bypassCache = "true".equalsIgnoreCase(bypassHeader);
-        long startTime = System.currentTimeMillis();
 
         // 3. Distributed Rate Limiting (Bucket4j with Redis Lettuce)
         return rateLimitService.checkRateLimit(apiKey)
@@ -96,9 +109,9 @@ public class ChatCompletionController {
                 .flatMap(cacheResult -> {
                     if (cacheResult.isHit()) {
                         long latencyMs = System.currentTimeMillis() - startTime;
+                        Duration latency = Duration.ofMillis(latencyMs);
                         String cacheHeader = cacheResult.getHeaderValue(); // HIT_EXACT or HIT_SEMANTIC
                         UUID apiKeyId = apiKey != null ? apiKey.getId() : null;
-                        String requestId = "req_cached_" + UUID.randomUUID().toString().replace("-", "").substring(0, 12);
 
                         ChatCompletionResponse cachedResponse = cacheResult.response();
                         int promptTokens = cachedResponse.getUsage() != null ? cachedResponse.getUsage().getPromptTokens() : 0;
@@ -122,6 +135,12 @@ public class ChatCompletionController {
                                 .statusCode(200)
                                 .build();
                         usageLogRepository.save(logEntry).subscribe();
+
+                        metricsService.recordRequest("cache", request.getModel(), 200, cacheHeader, latency);
+                        metricsService.recordTokens("cache", request.getModel(), promptTokens, completionTokens);
+                        if (request.isStreaming()) {
+                            metricsService.recordTtft("cache", request.getModel(), Duration.ofMillis(Math.max(1, latencyMs)));
+                        }
 
                         if (request.isStreaming()) {
                             Flux<ServerSentEvent<String>> stream = cacheService.replaySseStream(cachedResponse);
@@ -152,14 +171,14 @@ public class ChatCompletionController {
                             .flatMap(reservedCost -> {
                                 if (request.isStreaming()) {
                                     Flux<ServerSentEvent<String>> stream = proxyService.forwardStreaming(
-                                            request, apiKey, route, reservedCost, promptTokens);
+                                            request, apiKey, route, reservedCost, promptTokens, requestId);
                                     return Mono.just(ResponseEntity.ok()
                                             .header("X-Gateway-Cache", "MISS")
                                             .contentType(MediaType.TEXT_EVENT_STREAM)
                                             .body(stream));
                                 } else {
                                     return proxyService.forwardNonStreaming(
-                                            request, apiKey, route, reservedCost, promptTokens)
+                                            request, apiKey, route, reservedCost, promptTokens, requestId)
                                             .map(response -> ResponseEntity.ok()
                                                     .header("X-Gateway-Cache", "MISS")
                                                     .contentType(MediaType.APPLICATION_JSON)
@@ -168,6 +187,9 @@ public class ChatCompletionController {
                             });
                 })
                 .onErrorResume(RateLimitException.class, ex -> {
+                    Duration latency = Duration.ofMillis(System.currentTimeMillis() - startTime);
+                    metricsService.recordRequest("gateway", request.getModel(), HttpStatus.TOO_MANY_REQUESTS.value(), "NONE", latency);
+
                     Map<String, Object> errorBody = Map.of(
                             "error", Map.of(
                                     "message", ex.getMessage(),
@@ -181,6 +203,9 @@ public class ChatCompletionController {
                             .body(errorBody));
                 })
                 .onErrorResume(InsufficientBudgetException.class, ex -> {
+                    Duration latency = Duration.ofMillis(System.currentTimeMillis() - startTime);
+                    metricsService.recordRequest("gateway", request.getModel(), HttpStatus.PAYMENT_REQUIRED.value(), "NONE", latency);
+
                     Map<String, Object> errorBody = Map.of(
                             "error", Map.of(
                                     "message", ex.getMessage(),

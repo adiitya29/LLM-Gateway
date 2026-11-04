@@ -3,6 +3,8 @@ package com.llmgateway.config;
 import io.github.resilience4j.circuitbreaker.CallNotPermittedException;
 import io.github.resilience4j.circuitbreaker.CircuitBreakerConfig;
 import io.github.resilience4j.circuitbreaker.CircuitBreakerRegistry;
+import io.github.resilience4j.micrometer.tagged.TaggedCircuitBreakerMetrics;
+import io.micrometer.core.instrument.MeterRegistry;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.context.annotation.Bean;
@@ -20,7 +22,7 @@ public class ResilienceConfig {
     private static final Logger log = LoggerFactory.getLogger(ResilienceConfig.class);
 
     @Bean
-    public CircuitBreakerRegistry circuitBreakerRegistry(GatewayProperties properties) {
+    public CircuitBreakerRegistry circuitBreakerRegistry(GatewayProperties properties, MeterRegistry meterRegistry) {
         GatewayProperties.CircuitBreakerProperties cbProps = properties.getCircuitBreaker();
 
         CircuitBreakerConfig defaultConfig = CircuitBreakerConfig.custom()
@@ -57,6 +59,9 @@ public class ResilienceConfig {
                 log.info("Registered Resilience4j CircuitBreaker for provider: [{}]", providerName);
             });
         }
+
+        // Bind circuit breaker metrics to Micrometer MeterRegistry for Actuator / Prometheus
+        TaggedCircuitBreakerMetrics.ofCircuitBreakerRegistry(registry).bindTo(meterRegistry);
 
         return registry;
     }

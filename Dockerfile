@@ -9,15 +9,15 @@ RUN apt-get update && apt-get install -y --no-install-recommends maven && rm -rf
 
 # Cache dependency layer
 COPY pom.xml .
-RUN mvn dependency:go-offline -B
+RUN mvn dependency:go-offline -B || true
 
 # Compile and package production artifact
 COPY src src
 RUN mvn clean package -DskipTests -B
 
-# Extract Spring Boot layered jar for minimal Docker image layer diffs
+# Extract Spring Boot layered jar for minimal Docker image layer diffs (Spring Boot 3.3+ / 4.x)
 WORKDIR /workspace/target
-RUN java -Djarmode=layertools -jar llm-gateway-0.0.1-SNAPSHOT.jar extract
+RUN java -Djarmode=tools -jar llm-gateway-0.0.1-SNAPSHOT.jar extract --launcher --layers --destination extracted
 
 # ==============================================================================
 # Stage 2: Production Minimal Runtime
@@ -31,11 +31,11 @@ RUN groupadd -g 10001 gateway && \
     apt-get update && apt-get install -y --no-install-recommends curl && \
     rm -rf /var/lib/apt/lists/*
 
-# Copy layered jar from builder stage
-COPY --from=builder --chown=gateway:gateway /workspace/target/dependencies/ ./
-COPY --from=builder --chown=gateway:gateway /workspace/target/spring-boot-loader/ ./
-COPY --from=builder --chown=gateway:gateway /workspace/target/snapshot-dependencies/ ./
-COPY --from=builder --chown=gateway:gateway /workspace/target/application/ ./
+# Copy layered jar components from builder stage
+COPY --from=builder --chown=gateway:gateway /workspace/target/extracted/dependencies/ ./
+COPY --from=builder --chown=gateway:gateway /workspace/target/extracted/spring-boot-loader/ ./
+COPY --from=builder --chown=gateway:gateway /workspace/target/extracted/snapshot-dependencies/ ./
+COPY --from=builder --chown=gateway:gateway /workspace/target/extracted/application/ ./
 
 # High-Performance JVM Configuration:
 # - ZGC with generational mode for ultra-low latency (<1ms pause times)
@@ -52,4 +52,3 @@ HEALTHCHECK --interval=15s --timeout=5s --start-period=20s --retries=3 \
   CMD curl -f http://localhost:8080/actuator/health || exit 1
 
 ENTRYPOINT ["sh", "-c", "exec java $JAVA_OPTS org.springframework.boot.loader.launch.JarLauncher"]
-

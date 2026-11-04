@@ -32,6 +32,28 @@ services:
       timeout: 5s
       retries: 5
 
+  llm-gateway:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: llm-gateway-app
+    ports:
+      - "8080:8080"
+    environment:
+      - DB_HOST=postgres
+      - DB_PORT=5432
+      - DB_NAME=llmgateway
+      - DB_USER=postgres
+      - DB_PASSWORD=postgrespassword
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - GATEWAY_MASTER_KEY=dev-admin-key
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
 volumes:
   pgdata:
   redisdata:

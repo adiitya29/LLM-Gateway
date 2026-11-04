@@ -20,8 +20,21 @@ public class GatewayProperties {
     private Admin admin = new Admin();
     private Upstream upstream = new Upstream();
     private CircuitBreakerProperties circuitBreaker = new CircuitBreakerProperties();
+    private CacheProperties cache = new CacheProperties();
     private Map<String, ProviderConfig> providers = new HashMap<>();
     private Map<String, ModelRoute> routes = new HashMap<>();
+
+    @Data
+    public static class CacheProperties {
+        private boolean enabled = true;
+        private int exactTtlSeconds = 3600;
+        private int semanticTtlSeconds = 86400;
+        private double semanticSimilarityThreshold = 0.95;
+        private double maxTemperatureForSemantic = 0.2;
+        private String embeddingProvider = "gemini";
+        private String embeddingModel = "text-embedding-004";
+        private int embeddingDimension = 768;
+    }
 
     @Data
     public static class CircuitBreakerProperties {

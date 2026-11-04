@@ -35,7 +35,8 @@ import static org.assertj.core.api.Assertions.assertThat;
         "spring.r2dbc.url=r2dbc:postgresql://localhost:5433/llmgateway",
         "spring.data.redis.host=localhost",
         "spring.data.redis.port=6379",
-        "gateway.admin.master-key=test-admin-key"
+        "gateway.admin.master-key=test-admin-key",
+        "gateway.cache.enabled=false"
 })
 class UsageAndBudgetIntegrationTest {
 

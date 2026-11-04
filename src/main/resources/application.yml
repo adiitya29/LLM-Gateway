@@ -49,6 +49,16 @@ gateway:
     wait-duration-in-open-state-seconds: 10
     permitted-number-of-calls-in-half-open-state: 3
 
+  # Multi-Tier Caching (Redis Exact + pgvector Semantic)
+  cache:
+    enabled: true
+    exact-ttl-seconds: 3600
+    semantic-ttl-seconds: 86400
+    semantic-similarity-threshold: 0.95
+    max-temperature-for-semantic: 0.2
+    embedding-provider: ${EMBEDDING_PROVIDER:gemini}
+    embedding-model: text-embedding-004
+
   # Upstream Providers
   providers:
     gemini:

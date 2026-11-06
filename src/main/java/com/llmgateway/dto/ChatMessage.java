@@ -1,5 +1,6 @@
 package com.llmgateway.dto;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonProperty;
@@ -34,6 +35,7 @@ public class ChatMessage {
      * Helper to safely extract string content regardless of whether content
      * is a plain String or a structured list (multi-modal parts).
      */
+    @JsonIgnore
     public String getContentAsString() {
         if (content == null) {
             return "";

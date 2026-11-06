@@ -83,16 +83,16 @@ gateway:
       description: "Ultra-fast low-latency chat"
       targets:
         - provider: groq
-          model: llama-3.1-8b-instant
+          model: openai/gpt-oss-120b
         - provider: gemini
           model: gemini-1.5-flash
     smart-chat:
       description: "High-reasoning smart chat"
       targets:
+        - provider: groq
+          model: openai/gpt-oss-120b
         - provider: gemini
           model: gemini-1.5-flash
-        - provider: groq
-          model: llama-3.3-70b-versatile
     gemini-flash:
       description: "Google Gemini 1.5 Flash"
       targets:

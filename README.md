@@ -1,6 +1,6 @@
 # LLM Gateway
 
-A production-grade, reactive LLM Gateway built with **Java 21 (LTS)** and **Spring Boot WebFlux (Reactor Netty)**. Exposes an OpenAI-compatible API with intelligent multi-tier caching, dynamic alias routing, atomic budget management, distributed rate limiting, circuit breaker failovers, and end-to-end Prometheus observability.
+A high-performance, production-grade, reactive LLM Gateway built with **Java 21 (LTS)** and **Spring Boot WebFlux (Reactor Netty)**. Exposes an OpenAI-compatible API featuring two-tier semantic and exact caching, dynamic model alias routing with automatic failovers, atomic budget management (Reserve-then-Settle), distributed rate limiting, and end-to-end Prometheus observability.
 
 ---
 
@@ -13,23 +13,23 @@ flowchart TD
     subgraph Gateway ["LLM Gateway (Spring Boot WebFlux / Java 21)"]
         Corr["Correlation Filter (X-Request-Id & MDC)"]
         Auth["Gateway Auth Filter (SHA-256 API Keys)"]
-        RateLimit["Rate Limiter (Bucket4j + Redis)"]
+        RateLimit["Rate Limiter (Bucket4j + Redis Lettuce)"]
         
         subgraph Caching ["Multi-Tier Cache Engine"]
             T1["Tier 1: Redis Exact Match"]
             T2["Tier 2: pgvector Semantic Match (HNSW Cosine >= 0.95)"]
-            SSEReplay["SSE Replay Engine"]
+            SSEReplay["SSE Replay Engine (Sub-15ms Stream Replay)"]
         end
         
-        Budget["Reserve-Then-Settle Budget Service (Redis Lua)"]
+        Budget["Reserve-Then-Settle Budget Service (Redis Lua & R2DBC)"]
         Router["Model Alias Router & Fallback Chain"]
         CB["Resilience4j Circuit Breakers"]
         Metrics["Micrometer & Prometheus Metrics"]
     end
     
     subgraph Upstream ["Upstream Providers"]
-        Groq["Groq (Llama 3.3/3.1)"]
-        Gemini["Google Gemini (2.0/1.5 Flash)"]
+        Groq["Groq (GPT-OSS-120B / Llama 3.3)"]
+        Gemini["Google Gemini (2.0 / 1.5 Flash)"]
         OpenAI["OpenAI (GPT-4o / GPT-4o-mini)"]
     end
     
@@ -61,249 +61,213 @@ flowchart TD
 
 ---
 
-## Core Features
+## Detailed Tech Stack & Architecture
 
-- **OpenAI-Compatible API**: Transparent drop-in replacement (`POST /v1/chat/completions`, `GET /v1/models`).
-- **Reactive Streaming Passthrough**: Zero-buffering SSE streaming with backpressure control and side-channel token extraction via Reactor operators (`doOnNext`, `doOnCancel`, `doOnError`).
-- **Two-Tier Multi-Tier Caching**:
-  - **Tier 1 (Exact Match)**: Redis key `cache:exact:{sha256(model + messages + params)}` with sub-10ms response time.
-  - **Tier 2 (Semantic Match)**: 768-dimensional vector embeddings with PostgreSQL `pgvector` HNSW index, cosine similarity $\ge 0.95$, scoped to `sha256(model + ":" + systemPrompt)` with temperature gating ($\le 0.2$).
-  - **SSE Replay Engine**: Replays cached responses into realistic SSE chunk streams ending with `[DONE]`.
-  - **Zero Billing on Cache Hits**: 0 micro-USD billed for cached queries.
-- **Provider Abstraction & Dynamic Routing**: YAML-driven routing aliases (`fast-chat`, `smart-chat`, `gemini-flash`, `gpt-4o-mini`).
-- **Resilience & Pre-Stream Fallback Chains**: Circuit breakers per provider using Resilience4j Reactor operators. Automatic transparent failover on 5xx/429/timeout before the first byte is written. Provider locking after first token emission.
-- **Reserve-Then-Settle Budgeting**: Atomic pre-flight cost reservation and post-completion settlement via Redis Lua scripts and PostgreSQL R2DBC.
-- **Distributed Rate Limiting**: Distributed token bucket rate limiting via Bucket4j Lettuce reactive connection.
-- **Observability & Prometheus Metrics**:
-  - Micrometer metrics: `llm_gateway_requests_total`, `llm_gateway_time_to_first_token_seconds`, `llm_gateway_latency_seconds`, `llm_gateway_tokens_total`, `llm_gateway_cost_micro_usd_total`.
-  - Circuit breaker states (`closed`, `open`, `half_open`) exposed to `/actuator/prometheus`.
-  - Distributed correlation: `X-Request-Id` propagated across MDC, Reactor Context, and downstream provider HTTP calls.
-
----
-
-## Tech Stack
-
-| Component | Technology |
-| :--- | :--- |
-| **Runtime & Language** | Java 21 (LTS), Generational ZGC (`-XX:+UseZGC -XX:+ZGenerational`) |
-| **Framework** | Spring Boot 4.1.x / WebFlux (Reactor Netty) |
-| **Relational Database** | PostgreSQL 16 with `pgvector` extension |
-| **Database Access** | Spring Data R2DBC + `DatabaseClient` (non-blocking) |
-| **Database Migrations** | Flyway (JDBC startup runner) |
-| **Distributed Cache & State** | Redis 7 (Reactive Lettuce driver) |
-| **Rate Limiter** | Bucket4j Redis Lettuce |
-| **Circuit Breakers** | Resilience4j Reactor |
-| **Metrics & Telemetry** | Micrometer, Prometheus, Spring Boot Actuator |
-| **Testing** | JUnit 5, Reactor Test, WireMock Standalone, Testcontainers |
+| Layer / Component | Technology | Version | Purpose & Architectural Details |
+| :--- | :--- | :--- | :--- |
+| **Runtime & JVM** | Java LTS | **Java 21** | Modern Java with Generational ZGC (`-XX:+UseZGC -XX:+ZGenerational`) for ultra-low GC pause times under high-concurrency LLM streaming. |
+| **Reactive Framework** | Spring Boot WebFlux | **4.1.x** | Non-blocking reactive foundation on **Project Reactor 3.8** and **Reactor Netty 1.3**; zero thread-per-request overhead, native backpressure handling. |
+| **Database & Vector Store** | PostgreSQL + `pgvector` | **16.x** | Persistent storage for API keys, usage audit logs, model pricing, and 768-dimensional semantic embeddings indexed with **HNSW (Hierarchical Navigable Small World)** for sub-millisecond approximate nearest neighbor (ANN) cosine distance queries. |
+| **Reactive Database Client** | Spring Data R2DBC | **7.0.x** | Pure reactive, non-blocking asynchronous PostgreSQL driver avoiding JDBC connection thread starvation. |
+| **Schema Migrations** | Flyway | **10.x** | Versioned, synchronous startup migrations (`V1__init_schema.sql`, `V2__add_groq_gpt_oss_pricing.sql`) ensuring deterministic schema creation before reactive beans initialize. |
+| **Distributed Cache & State** | Redis | **7.x (Alpine)** | High-throughput in-memory datastore for Tier 1 exact prompt caching, API key authentication cache, and atomic Redis Lua scripts. |
+| **Reactive Redis Driver** | Lettuce | **6.x** | Non-blocking, netty-backed Redis client sharing event loops with WebFlux. |
+| **Distributed Rate Limiting** | Bucket4j | **8.10.x** | Distributed Token Bucket rate limiting via `LettuceBasedProxyManager`; enforces strict per-key Requests-Per-Minute (RPM) limits across clustered gateway nodes. |
+| **Fault Tolerance & Resilience** | Resilience4j | **2.2.x** | Circuit Breaker pattern with Reactor operators (`transformDeferred`), sliding-window failure rate thresholds, half-open probe states, and automatic upstream failover before the first byte is streamed. |
+| **Metrics & Observability** | Micrometer + Prometheus | **Latest** | Native metrics scraping endpoint (`/actuator/prometheus`) tracking request latencies, Time-To-First-Token (TTFT), token counts (prompt & completion), spend in micro-USD, and circuit breaker states. |
+| **Serialization & Streaming** | Jackson | **2.18.x** | Streaming JSON serialization/deserialization with custom `@JsonAlias` and `@JsonIgnore` helpers preventing leaked DTO internals to upstream LLMs. |
+| **Integration Testing** | JUnit 5 + WireMock + Testcontainers | **Latest** | Comprehensive 28-test test suite testing isolated containers, Mock WireMock upstreams, SSE reactive assertions via `StepVerifier`, and failure scenarios. |
 
 ---
 
-## Sequence: Request Lifecycle & Budgeting
+## Core Capabilities
 
-```mermaid
-sequenceDiagram
-    autonumber
-    actor Client
-    participant GW as LLM Gateway
-    participant Cache as Multi-Tier Cache
-    participant Redis as Redis (Lua)
-    participant Upstream as Upstream LLM (Groq/Gemini)
-    participant DB as PostgreSQL (pgvector & R2DBC)
+### 1. Multi-Tier Caching Engine
+- **Tier 1: Redis Exact Match (`HIT_EXACT`)**:
+  - Keys are deterministic hashes of: `sha256(model + messages + temperature + topP + maxTokens + stop)`.
+  - Sub-15ms response latency with zero LLM API costs.
+- **Tier 2: pgvector Semantic Match (`HIT_SEMANTIC`)**:
+  - Uses vector embeddings (768 dimensions) via cosine similarity ($\ge 0.95$).
+  - Scoped to `sha256(model + ":" + systemPrompt)`.
+  - Gated by temperature ($\le 0.2$) so creative/random requests are never falsely matched to cached completions.
+- **SSE Stream Replay Engine**:
+  - When a client sends `"stream": true` for a prompt that is already cached, the gateway converts the cached completion into standard OpenAI SSE chunks and streams them back in real time.
+- **Cache Bypass Header**:
+  - Clients can force a fresh generation using `X-Gateway-Bypass-Cache: true`.
 
-    Client->>GW: POST /v1/chat/completions (Bearer sk-gw-...)
-    GW->>GW: Validate Auth & Check Model Permission
-    GW->>Cache: Lookup Exact (Redis) & Semantic (pgvector)
-    
-    alt Cache HIT (Tier 1 or Tier 2)
-        Cache-->>GW: Return Cached Response (0 cost)
-        GW->>DB: Log Usage (cost=0, cache_hit=HIT_*)
-        GW-->>Client: 200 OK (X-Gateway-Cache: HIT_*)
-    else Cache MISS
-        GW->>Redis: Reserve Estimated Max Cost (Lua)
-        Redis-->>GW: Reservation Approved
-        GW->>Upstream: Forward Request (with X-Request-Id)
-        Upstream-->>GW: Streaming SSE Chunks / JSON Response
-        GW->>Redis: Settle Actual Cost & Refund Delta (Lua)
-        GW->>Cache: Asynchronously Cache Response (Redis + pgvector)
-        GW->>DB: Async Save UsageLog & Metrics
-        GW-->>Client: 200 OK (X-Gateway-Cache: MISS)
-    end
+### 2. Provider Abstraction & Model Alias Routing
+Decouples client models from vendor models through declarative YAML routes:
+```yaml
+gateway:
+  routes:
+    fast-chat:
+      description: "Ultra-fast low-latency chat"
+      targets:
+        - provider: groq
+          model: openai/gpt-oss-120b
+        - provider: gemini
+          model: gemini-1.5-flash
+    smart-chat:
+      description: "High-reasoning smart chat"
+      targets:
+        - provider: groq
+          model: openai/gpt-oss-120b
+        - provider: gemini
+          model: gemini-1.5-flash
 ```
+* **Pre-stream Failover:** If the primary provider returns a 429, 503, 500, or times out before the first byte is sent, the gateway seamlessly fails over to the next configured target in the chain.
+* **Stream Locking:** Once the first token is emitted to the client, the provider target is locked to prevent corrupted or split streaming output.
+
+### 3. Reserve-Then-Settle Budgeting Engine
+- Eliminates race conditions in concurrent spend tracking:
+  1. **Reserve:** Before calling upstream, the gateway estimates the maximum potential cost based on prompt token count and `max_tokens`, atomically reserving the amount in Redis.
+  2. **Call Upstream:** The request executes against the LLM.
+  3. **Settle:** Upon completion (or stream termination `[DONE]`), the gateway calculates the exact token cost, charges the actual spend, and refunds the reserved delta back to the key's budget.
+  4. **Enforce:** If a key lacks sufficient budget, requests are immediately rejected with `402 Payment Required`.
+
+### 4. Distributed Rate Limiting
+- Enforces per-API-key Requests-Per-Minute (`rate_limit_rpm`) using distributed Redis-backed Bucket4j token buckets.
+- When the rate limit is exceeded, returns `429 Too Many Requests` with the standard `Retry-After: <seconds>` HTTP header.
+
+### 5. Prometheus Observability & Telemetry
+Exposes metrics at `/actuator/prometheus`:
+- `llm_gateway_requests_total`: Counter tagged by `provider`, `model`, `status`, and `cache_hit` (`HIT_EXACT`, `HIT_SEMANTIC`, `MISS`).
+- `llm_gateway_time_to_first_token_seconds`: Histogram measuring initial token latency.
+- `llm_gateway_latency_seconds`: End-to-end request latency distribution.
+- `llm_gateway_tokens_total`: Total tokens partitioned by `type` (`prompt`, `completion`).
+- `llm_gateway_cost_micro_usd_total`: Cumulative cost billed to API keys in micro-USD ($1\text{ micro-USD} = \$0.000001\text{ USD}$).
+- `resilience4j_circuitbreaker_state`: Real-time circuit breaker health per provider (`closed`, `open`, `half_open`).
 
 ---
 
-## Quickstart
+## Configuration & Environment Variables
+
+| Variable | Default | Description |
+| :--- | :--- | :--- |
+| `DB_HOST` | `localhost` | PostgreSQL host |
+| `DB_PORT` | `5433` | PostgreSQL port |
+| `DB_NAME` | `llmgateway` | Database name |
+| `DB_USER` | `postgres` | Database username |
+| `DB_PASSWORD` | `postgrespassword` | Database password |
+| `REDIS_HOST` | `localhost` | Redis host |
+| `REDIS_PORT` | `6379` | Redis port |
+| `GATEWAY_MASTER_KEY`| `dev-admin-key` | Master key for admin endpoints (`/v1/admin/*`) |
+| `GROQ_API_KEY` | *(empty)* | Groq API key for upstream Llama & GPT-OSS models |
+| `GEMINI_API_KEY` | *(empty)* | Google Gemini API key |
+| `OPENAI_API_KEY` | *(empty)* | OpenAI API key |
+
+---
+
+## Quickstart & Local Setup
 
 ### 1. Start Infrastructure via Docker Compose
 ```bash
 docker compose up -d postgres redis
 ```
-*Starts PostgreSQL 16 on port `5433` with `pgvector` and Redis on port `6379`.*
+*Spins up PostgreSQL 16 with `pgvector` on port `5433` and Redis 7 on port `6379`.*
 
 ### 2. Build the Application
 ```bash
 export JAVA_HOME=/opt/homebrew/opt/openjdk@21
-export PATH=$JAVA_HOME/bin:$PATH
-mvn clean compile
+mvn clean package -DskipTests
 ```
 
-### 3. Run the Automated Test Suite (27+ Tests)
+### 3. Run the Automated Test Suite (28 Integration Tests)
 ```bash
 mvn test
 ```
 
 ### 4. Run the Gateway Application
 ```bash
-mvn spring-boot:run
+export GROQ_API_KEY="gsk_..."
+export GATEWAY_MASTER_KEY="dev-admin-key"
+java -jar target/llm-gateway-0.0.1-SNAPSHOT.jar
 ```
 *Server starts on `http://localhost:8080`.*
 
 ---
 
-## Running Full Stack in Docker
-
-Build and launch the complete stack (Postgres + pgvector, Redis, and Gateway) with multi-stage Docker build:
-```bash
-docker compose up --build
-```
-
-Health check endpoint:
-```bash
-curl http://localhost:8080/actuator/health
-```
-
----
-
 ## API Usage Guide
 
-### 1. API Key Provisioning (Admin API)
-
-#### Create a Key
+### 1. Provision an API Key
 ```bash
-curl -X POST http://localhost:8080/v1/admin/keys \
-  -H "Content-Type: application/json" \
+curl -i -X POST http://localhost:8080/v1/admin/keys \
   -H "X-Admin-Master-Key: dev-admin-key" \
+  -H "Content-Type: application/json" \
   -d '{
-    "name": "Production Service Key",
-    "allowedModels": ["fast-chat", "smart-chat"],
-    "budgetMicroUsd": 10000000,
-    "rateLimitRpm": 120
+    "name": "My-App-Key",
+    "allowed_models": ["fast-chat", "smart-chat"],
+    "monthly_budget_usd": 10.0,
+    "rate_limit_rpm": 60
   }'
 ```
-*Returns the full raw key (`sk-gw-...`) **once** upon creation.*
+*Returns the full raw API key (`sk-gw-...`) once upon creation.*
 
-#### List Keys (Prefix Only)
+### 2. Standard Chat Completion (Non-Streaming)
 ```bash
-curl http://localhost:8080/v1/admin/keys \
-  -H "X-Admin-Master-Key: dev-admin-key"
-```
-
-#### Revoke a Key
-```bash
-curl -X DELETE http://localhost:8080/v1/admin/keys/{keyId} \
-  -H "X-Admin-Master-Key: dev-admin-key"
-```
-
----
-
-### 2. Chat Completions (`POST /v1/chat/completions`)
-
-#### Non-Streaming Request
-```bash
-curl -X POST http://localhost:8080/v1/chat/completions \
+curl -i -X POST http://localhost:8080/v1/chat/completions \
+  -H "Authorization: Bearer $API_KEY" \
   -H "Content-Type: application/json" \
-  -H "Authorization: Bearer <your-api-key>" \
   -d '{
     "model": "fast-chat",
-    "messages": [{"role": "user", "content": "What is the capital of France?"}],
-    "temperature": 0.1,
-    "stream": false
+    "messages": [
+      {"role": "user", "content": "What is the capital of Japan? Answer in one word."}
+    ],
+    "temperature": 0.0
   }'
 ```
 
-#### Streaming SSE Request
+### 3. Streaming Chat Completion (SSE)
 ```bash
-curl -N -X POST http://localhost:8080/v1/chat/completions \
+curl -N -i -X POST http://localhost:8080/v1/chat/completions \
+  -H "Authorization: Bearer $API_KEY" \
   -H "Content-Type: application/json" \
-  -H "Authorization: Bearer <your-api-key>" \
   -d '{
     "model": "fast-chat",
-    "messages": [{"role": "user", "content": "Explain reactive programming in two sentences."}],
-    "stream": true
+    "stream": true,
+    "stream_options": {"include_usage": true},
+    "messages": [
+      {"role": "user", "content": "Count from 1 to 5, one number per line."}
+    ],
+    "temperature": 0.0
   }'
 ```
 
-#### Bypassing Cache
-Pass `X-Gateway-Bypass-Cache: true` to force an upstream model call:
+### 4. Bypassing the Cache
+Pass `X-Gateway-Bypass-Cache: true` to force an upstream generation:
 ```bash
-curl -X POST http://localhost:8080/v1/chat/completions \
-  -H "Content-Type: application/json" \
-  -H "Authorization: Bearer <your-api-key>" \
+curl -i -X POST http://localhost:8080/v1/chat/completions \
+  -H "Authorization: Bearer $API_KEY" \
   -H "X-Gateway-Bypass-Cache: true" \
+  -H "Content-Type: application/json" \
   -d '{
     "model": "fast-chat",
-    "messages": [{"role": "user", "content": "What is the capital of France?"}]
+    "messages": [
+      {"role": "user", "content": "What is the capital of Japan?"}
+    ]
   }'
 ```
 
----
-
-### 3. Usage & Budget Consumption Query
+### 5. Check Token Usage & Spend Audit
 ```bash
-curl http://localhost:8080/v1/usage \
-  -H "Authorization: Bearer <your-api-key>"
+curl -i -X GET http://localhost:8080/v1/usage \
+  -H "Authorization: Bearer $API_KEY"
 ```
-Example Response:
-```json
-{
-  "api_key_id": "7538d586-13cb-4f1c-9b16-563b7829871f",
-  "key_prefix": "sk-gw-89abc",
-  "budget_micro_usd": 10000000,
-  "spent_micro_usd": 2450,
-  "remaining_micro_usd": 9997550,
-  "budget_usd": 10.0,
-  "spent_usd": 0.00245,
-  "remaining_usd": 9.99755,
-  "total_requests": 6,
-  "total_prompt_tokens": 140,
-  "total_completion_tokens": 210,
-  "total_tokens": 350
-}
+
+### 6. Prometheus Metrics Scrape
+```bash
+curl -s http://localhost:8080/actuator/prometheus | grep "llm_gateway"
+```
+
+### 7. Revoke an API Key
+```bash
+curl -i -X DELETE http://localhost:8080/v1/admin/keys/{id} \
+  -H "X-Admin-Master-Key: dev-admin-key"
 ```
 
 ---
 
-### 4. Observability & Prometheus Metrics
-Scrape Prometheus metrics at:
-```bash
-curl http://localhost:8080/actuator/prometheus
-```
-
-Exported Metrics Include:
-- `llm_gateway_requests_total{provider="...",model="...",status="...",cache_hit="..."}`
-- `llm_gateway_time_to_first_token_seconds{provider="...",model="..."}` (distribution summary)
-- `llm_gateway_latency_seconds{provider="...",model="...",status="...",cache_hit="..."}`
-- `llm_gateway_tokens_total{type="prompt|completion",provider="...",model="..."}`
-- `llm_gateway_cost_micro_usd_total{api_key="...",provider="...",model="..."}`
-- `resilience4j_circuitbreaker_state{name="...",state="closed|open|half_open"}`
-
----
-
-## Benchmarking & Performance Validation
-
-A benchmark script is included to test cold vs. warm cache speedups and load throughput:
-```bash
-# Run benchmark with Python 3
-python3 scripts/benchmark.py --gateway-url http://localhost:8080 --requests 50 --concurrency 10
-```
-Or via shell script:
-```bash
-./scripts/benchmark.sh --requests 100 --concurrency 20
-```
-
----
-
-## OpenAI Python SDK Integration
+## Python OpenAI SDK Integration
 
 ```python
 from openai import OpenAI
@@ -316,14 +280,15 @@ client = OpenAI(
 # Standard non-streaming chat completion
 response = client.chat.completions.create(
     model="fast-chat",
-    messages=[{"role": "user", "content": "Hello LLM Gateway!"}]
+    messages=[{"role": "user", "content": "Hello LLM Gateway!"}],
+    temperature=0.0
 )
 print(response.choices[0].message.content)
 
 # Streaming SSE chat completion
 stream = client.chat.completions.create(
-    model="smart-chat",
-    messages=[{"role": "user", "content": "Write a 3-line haiku."}],
+    model="fast-chat",
+    messages=[{"role": "user", "content": "Write a short haiku."}],
     stream=True
 )
 for chunk in stream:
@@ -334,9 +299,10 @@ print()
 
 ---
 
-## Continuous Integration (CI/CD)
+## CI/CD Pipeline
 
-The GitHub Actions workflow at [`.github/workflows/ci.yml`](file:///Users/adityayadav/Desktop/LLM%20Gateway/.github/workflows/ci.yml) automates:
-1. Spin-up of PostgreSQL 16 (pgvector) and Redis 7 containers.
-2. JDK 21 build and execution of all 27+ integration tests (`mvn clean verify`).
-3. Multi-stage Docker image packaging verification.
+The GitHub Actions workflow at [`.github/workflows/ci.yml`](file://.github/workflows/ci.yml) validates every pull request and push to `main`:
+1. Spawns isolated PostgreSQL 16 (`pgvector`) and Redis 7 service containers.
+2. Runs Flyway database migrations (`V1`, `V2`).
+3. Executes all 28 reactive integration tests (`mvn clean verify -B`).
+4. Builds and verifies the multi-stage production Docker container.

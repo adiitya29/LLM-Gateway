@@ -1,5 +1,6 @@
 package com.llmgateway.dto;
 
+import com.fasterxml.jackson.annotation.JsonAlias;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonProperty;
@@ -22,12 +23,15 @@ public class CreateApiKeyRequest {
     private String name;
 
     @JsonProperty("allowed_models")
+    @JsonAlias({"allowedModels", "allowed_models"})
     private List<String> allowedModels;
 
     @JsonProperty("budget_micro_usd")
+    @JsonAlias({"budgetMicroUsd", "budget_micro_usd"})
     private Long budgetMicroUsd;
 
     @JsonProperty("rate_limit_rpm")
+    @JsonAlias({"rateLimitRpm", "rate_limit_rpm"})
     private Integer rateLimitRpm;
 }
 

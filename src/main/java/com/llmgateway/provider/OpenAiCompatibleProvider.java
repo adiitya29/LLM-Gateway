@@ -80,7 +80,14 @@ public class OpenAiCompatibleProvider implements LlmProvider {
                         }
                         return response;
                     })
-                    .doOnError(err -> log.error("Provider [{}] chat call failed: {}", name, err.getMessage()));
+                    .doOnError(err -> {
+                        if (err instanceof org.springframework.web.reactive.function.client.WebClientResponseException wcre) {
+                            log.error("Provider [{}] chat call failed: {} - Upstream response body: {}",
+                                    name, err.getMessage(), wcre.getResponseBodyAsString());
+                        } else {
+                            log.error("Provider [{}] chat call failed: {}", name, err.getMessage());
+                        }
+                    });
         });
     }
 

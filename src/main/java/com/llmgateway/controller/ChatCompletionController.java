@@ -21,6 +21,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.reactive.function.client.WebClientResponseException;
 import org.springframework.web.server.ServerWebExchange;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
@@ -214,6 +215,42 @@ public class ChatCompletionController {
                             )
                     );
                     return Mono.just(ResponseEntity.status(HttpStatus.PAYMENT_REQUIRED)
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .body(errorBody));
+                })
+                .onErrorResume(WebClientResponseException.class, ex -> {
+                    Duration latency = Duration.ofMillis(System.currentTimeMillis() - startTime);
+                    metricsService.recordRequest("upstream", request.getModel(), ex.getStatusCode().value(), "NONE", latency);
+
+                    String upstreamBody = ex.getResponseBodyAsString();
+                    String msg = (upstreamBody != null && !upstreamBody.isBlank())
+                            ? upstreamBody
+                            : "Upstream provider error: " + ex.getStatusText();
+
+                    Map<String, Object> errorBody = Map.of(
+                            "error", Map.of(
+                                    "message", msg,
+                                    "type", "upstream_error",
+                                    "code", String.valueOf(ex.getStatusCode().value())
+                            )
+                    );
+                    return Mono.just(ResponseEntity.status(ex.getStatusCode())
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .body(errorBody));
+                })
+                .onErrorResume(Exception.class, ex -> {
+                    log.error("[{}] Unhandled error during chat completion: {}", requestId, ex.getMessage(), ex);
+                    Duration latency = Duration.ofMillis(System.currentTimeMillis() - startTime);
+                    metricsService.recordRequest("gateway", request.getModel(), HttpStatus.BAD_GATEWAY.value(), "NONE", latency);
+
+                    Map<String, Object> errorBody = Map.of(
+                            "error", Map.of(
+                                    "message", "Upstream provider error: " + ex.getMessage(),
+                                    "type", "api_error",
+                                    "code", "bad_gateway"
+                            )
+                    );
+                    return Mono.just(ResponseEntity.status(HttpStatus.BAD_GATEWAY)
                             .contentType(MediaType.APPLICATION_JSON)
                             .body(errorBody));
                 });

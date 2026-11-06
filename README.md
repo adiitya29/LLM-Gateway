@@ -296,13 +296,3 @@ for chunk in stream:
         print(chunk.choices[0].delta.content, end="", flush=True)
 print()
 ```
-
----
-
-## CI/CD Pipeline
-
-The GitHub Actions workflow at [`.github/workflows/ci.yml`](file://.github/workflows/ci.yml) validates every pull request and push to `main`:
-1. Spawns isolated PostgreSQL 16 (`pgvector`) and Redis 7 service containers.
-2. Runs Flyway database migrations (`V1`, `V2`).
-3. Executes all 28 reactive integration tests (`mvn clean verify -B`).
-4. Builds and verifies the multi-stage production Docker container.

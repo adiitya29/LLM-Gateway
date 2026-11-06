@@ -258,7 +258,7 @@ class ObservabilityAndTelemetryIntegrationTest {
                 });
 
         // Wait brief instant for async settlement & metrics emission
-        Thread.sleep(200);
+        Thread.sleep(800);
 
         // 2. Scrape /actuator/prometheus
         String prometheusScrape = webTestClient.get()

@@ -3,8 +3,11 @@ package com.llmgateway.service;
 import com.llmgateway.model.ModelPricing;
 import com.llmgateway.repository.ModelPricingRepository;
 import jakarta.annotation.PostConstruct;
+import org.flywaydb.core.Flyway;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.annotation.DependsOn;
 import org.springframework.stereotype.Service;
 import reactor.core.publisher.Mono;
 
@@ -22,7 +25,7 @@ public class PricingService {
 
     private static final int DEFAULT_ESTIMATED_MAX_TOKENS = 1000;
 
-    public PricingService(ModelPricingRepository pricingRepository) {
+    public PricingService(ModelPricingRepository pricingRepository, @Autowired(required = false) Flyway flyway) {
         this.pricingRepository = pricingRepository;
     }
 
@@ -58,6 +61,18 @@ public class PricingService {
                 return entry.getValue();
             }
         }
+
+        // Fallback default pricing for active Groq models if pricing cache is not loaded yet
+        if ("groq".equalsIgnoreCase(provider)) {
+            return ModelPricing.builder()
+                    .provider("groq")
+                    .modelName(model)
+                    .promptTokenMicroUsd(150_000)
+                    .completionTokenMicroUsd(600_000)
+                    .isActive(true)
+                    .build();
+        }
+
         return null;
     }
 

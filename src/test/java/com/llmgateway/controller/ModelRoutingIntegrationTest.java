@@ -194,9 +194,9 @@ class ModelRoutingIntegrationTest {
         assertThat(response.getChoices().get(0).getMessage().getContentAsString())
                 .isEqualTo("Fast response from Groq Llama 3.1 8B!");
 
-        // Verify Groq received model rewritten to "llama-3.1-8b-instant"
+        // Verify Groq received model rewritten to "openai/gpt-oss-120b"
         wireMockServer.verify(postRequestedFor(urlEqualTo("/groq/v1/chat/completions"))
-                .withRequestBody(matchingJsonPath("$.model", equalTo("llama-3.1-8b-instant"))));
+                .withRequestBody(matchingJsonPath("$.model", equalTo("openai/gpt-oss-120b"))));
     }
 
     @Test
@@ -308,9 +308,9 @@ class ModelRoutingIntegrationTest {
                 .assertNext(sse -> assertThat(sse.data()).isEqualTo("[DONE]"))
                 .verifyComplete();
 
-        // Verify Groq received model rewritten to "llama-3.1-8b-instant"
+        // Verify Groq received model rewritten to "openai/gpt-oss-120b"
         wireMockServer.verify(postRequestedFor(urlEqualTo("/groq/v1/chat/completions"))
-                .withRequestBody(matchingJsonPath("$.model", equalTo("llama-3.1-8b-instant"))));
+                .withRequestBody(matchingJsonPath("$.model", equalTo("openai/gpt-oss-120b"))));
     }
 }
 

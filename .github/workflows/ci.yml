@@ -56,7 +56,7 @@ jobs:
           DB_PASSWORD: postgrespassword
           REDIS_HOST: localhost
           REDIS_PORT: 6379
-          GATEWAY_MASTER_KEY: test-ci-master-key
+          GATEWAY_MASTER_KEY: test-admin-key
         run: |
           mvn clean verify -B
 

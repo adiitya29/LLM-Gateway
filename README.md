@@ -296,3 +296,63 @@ for chunk in stream:
         print(chunk.choices[0].delta.content, end="", flush=True)
 print()
 ```
+
+---
+
+## Some Snapshots of Running API's:
+
+
+### 1. API keys generated and authorised
+<img width="2560" height="1600" alt="image" src="https://github.com/user-attachments/assets/4ae74462-3d13-45c3-abc5-7f8850e16105" />
+
+### 2. Model Restrictions
+<img width="2560" height="715" alt="image" src="https://github.com/user-attachments/assets/3aded856-f45a-45f0-9de0-7de77d56304e" />
+
+### 3. Query model catalogue
+<img width="2560" height="1600" alt="image" src="https://github.com/user-attachments/assets/10c37d9a-db26-4b8c-a0a0-17268f6e569f" />
+
+### 4. Chat Completion Request
+<img width="2559" height="965" alt="image" src="https://github.com/user-attachments/assets/1802c689-47ff-4a4b-8d04-3fff6ae8c362" />
+
+### 5. SSE(Server Sent Events) 1
+<img width="2560" height="1600" alt="image" src="https://github.com/user-attachments/assets/eb094673-be20-42cf-8b76-4b9a1c4f243f" />
+
+### 6. SSE(Server Sent Events) 2
+<img width="2560" height="1600" alt="image" src="https://github.com/user-attachments/assets/80665f02-e7ff-49e0-a893-b968a8da2e1b" />
+
+### 7. Multi-tier caching MISS
+<img width="2560" height="856" alt="image" src="https://github.com/user-attachments/assets/6d211bc2-5ee9-4e4b-bf39-14c861405a95" />
+
+### 8. Multi-tier caching HIT_EXACT
+<img width="2560" height="840" alt="image" src="https://github.com/user-attachments/assets/f8c49638-8a86-4fb2-9635-aae5a4420ce3" />
+
+### 9. Streaming Replay from Cache
+<img width="2560" height="998" alt="image" src="https://github.com/user-attachments/assets/201beb9a-c537-4a5b-9444-a0ebff8e6433" />
+
+### 10. Cache Bypass Header
+<img width="2560" height="878" alt="image" src="https://github.com/user-attachments/assets/d03ff8b7-5e67-4c3d-b5b1-f263c7b9f60d" />
+
+### 11. API usage and Cost Audit
+<img width="2560" height="475" alt="image" src="https://github.com/user-attachments/assets/86a899ba-e6c9-4379-9988-691f5167b1b4" />
+
+### 12. Create key with microscopic budget
+<img width="2560" height="715" alt="image" src="https://github.com/user-attachments/assets/fb846ee2-ed82-4b55-83c4-3d3538e1d075" />
+
+### 13. Failed chat completion using broken key
+<img width="2560" height="795" alt="image" src="https://github.com/user-attachments/assets/d967db73-4597-4ab8-8729-aabef59d2f95" />
+
+### 14. Create a key with Rate Limits
+<img width="2560" height="717" alt="image" src="https://github.com/user-attachments/assets/d07a64cc-610f-40c8-ac5c-3860bbc45a02" />
+
+### 15. Failed Multiple Requests due to Rate Limits
+<img width="2560" height="762" alt="image" src="https://github.com/user-attachments/assets/001edb77-25b2-43d4-b470-6a7511acbdb2" />
+
+### 16. Prometheus Metrics for Observability
+<img width="2560" height="1545" alt="image" src="https://github.com/user-attachments/assets/bbca29b4-485e-463a-9fca-279d0af4ea5f" />
+
+
+
+
+
+
+
